@@ -299,6 +299,7 @@ function vToday(){
     <div class="card"><div class="row" style="justify-content:space-between"><h3>Today's meals</h3><button class="btn ghost sm" data-go="meals">Plan</button></div>
       ${meals.length ? `<ul class="list">${meals.map(([n,p]) => { const r = p.recipeId && Store.get("recipes", p.recipeId); return `<li><div class="grow"><div class="meta">${esc(n)}</div><div class="name">${esc(r ? r.title : p.text||"")}</div></div>${(p.eaters||[]).map(id=>`<span title="${esc(whoName(id))}">${esc(member(id)?.emoji||"")}</span>`).join("")}</li>`; }).join("")}</ul>` : `<p class="empty">Nothing planned. Open Meals to plan your week.</p>`}
     </div>
+    ${openTodos() ? `<button class="card row" data-go="me" style="justify-content:space-between;font:inherit;color:inherit;cursor:pointer;text-align:left"><span><b>${openTodos()}</b> open to-dos in your notes</span><span class="sub">Open</span></button>` : ""}
     <div class="card"><h3>Chores due</h3>
       ${late.length ? `<ul class="list">${late.map(choreLi).join("")}</ul>` : `<p class="empty">You're all caught up.</p>`}
     </div>
@@ -593,7 +594,8 @@ function vMe(){
   const left = target!=null ? target - eaten + burned : null;
   return `<section class="view">
     <div class="card row"><span class="avatar">${esc(m?.emoji||"🙂")}</span><div class="grow"><div class="name">${esc(m?.name || "Who are you?")}</div><div class="meta">${m ? dietPills(m.diets) : "Pick yourself so your meals and chores show here."}</div></div><button class="btn sm" data-act="me-edit">${m?"My details":"Choose"}</button></div>
-    <p class="lock" style="margin:-6px 2px 0">🔒 Everything on this page is private. Other people in your household can't see it.</p>
+    <p class="lock" style="margin:-6px 2px 0">🔒 Your health data and notes are private. Other people in your household can only see notes you choose to share.</p>
+    ${notesCard()}
     <div class="row" style="justify-content:space-between"><div class="row"><button class="btn sm" data-act="me-day" data-d="-1" aria-label="Previous day">‹</button><b>${esc(fmtDate(meDate))}</b><button class="btn sm" data-act="me-day" data-d="1" aria-label="Next day">›</button></div>${meDate!==today()?`<button class="btn ghost sm" data-act="me-day" data-d="0">Today</button>`:""}</div>
     <div class="stats">
       <div class="stat"><b>${target ?? "–"}</b><span>daily target kcal</span></div>
@@ -615,6 +617,50 @@ function weightHistory(){
   return ws.length ? `<ul class="list">${ws.map(w=>`<li><span class="grow">${esc(shortDate(w.date))}</span><b>${fmtNum(w.weight)} kg</b></li>`).join("")}</ul>` : `<p class="empty">Nothing logged yet.</p>`;
 }
 function updLog(fn){ const id = Store.pid("log_"+meDate); const cur = Store.get("logs", id) || { date:meDate, extras:[], exercise:[], ate:{} }; Store.put("logs", id, fn({ ...cur, extras:[...(cur.extras||[])], exercise:[...(cur.exercise||[])], ate:{ ...(cur.ate||{}) } })); }
+
+
+/* ---------- Notes with to-do checklists ---------- */
+/* Private notes live in "notes" (only you), shared ones in "sharednotes" (whole household). */
+const allNotes = () => [...L("notes").map(n=>({ ...n, _c:"notes" })), ...L("sharednotes").map(n=>({ ...n, _c:"sharednotes" }))]
+  .sort((a,b)=> (b.pinned?1:0)-(a.pinned?1:0) || (b._t||0)-(a._t||0));
+const openTodos = () => allNotes().reduce((t,n)=>t+(n.items||[]).filter(i=>!i.done).length, 0);
+let notesShowDone = {};
+function notesCard(){
+  const ns = allNotes();
+  return `<div class="card" style="display:flex;flex-direction:column;gap:10px"><div class="row" style="justify-content:space-between"><h3>Notes and to-dos</h3><div class="row"><button class="btn sm" data-act="note-add" data-list="1">+ To-do list</button><button class="btn sm" data-act="note-add">+ Note</button></div></div>
+    ${ns.length ? ns.map(noteHTML).join("") : `<p class="empty">Write notes, or make a to-do list with boxes to tick.</p>`}</div>`;
+}
+function noteHTML(n){
+  const items = n.items || [], done = items.filter(i=>i.done).length, key = n._c+":"+n.id;
+  const vis = items.map((it,i)=>[it,i]).filter(([it]) => !it.done || notesShowDone[key] !== false);
+  return `<div style="border:1px solid var(--line);border-radius:10px;padding:10px 12px;display:flex;flex-direction:column;gap:6px">
+    <div class="row" style="justify-content:space-between;cursor:pointer" data-act="note-edit" data-c="${n._c}" data-id="${esc(n.id)}"><div class="grow"><span class="name">${n.pinned?"📌 ":""}${esc(n.title||"Note")}</span> ${n._c==="notes"?privateTag:`<span class="pill">shared</span>`}</div>${items.length?`<span class="pill ${done===items.length?"ok":""}">${done}/${items.length}</span>`:""}</div>
+    ${n.text?`<div class="meta" style="white-space:pre-line">${esc(n.text)}</div>`:""}
+    ${items.length?`<ul class="list">${vis.map(([it,i]) => `<li class="${it.done?"done":""}" style="padding:6px 2px"><button class="check ${it.done?"on":""}" data-act="todo-tick" data-c="${n._c}" data-id="${esc(n.id)}" data-i="${i}" aria-label="${it.done?"Untick":"Tick"} ${esc(it.t)}"></button><span class="grow name">${esc(it.t)}</span></li>`).join("")}</ul>`:""}
+    <form class="row" data-todo-form="${n._c}|${esc(n.id)}" autocomplete="off"><input name="t" placeholder="Add a to-do" style="flex:1;padding:7px 10px" aria-label="Add a to-do"><button class="btn sm">Add</button>${done?`<button type="button" class="btn ghost sm" data-act="todo-clear" data-c="${n._c}" data-id="${esc(n.id)}">Clear ticked</button>`:""}</form>
+  </div>`;
+}
+/* Edit a note. Checklist items are edited one per line; ticks are kept for lines that stay the same. */
+function editNote(c, id, asList){
+  const cur = id ? Store.get(c, id) : null;
+  const vals = cur ? { ...cur, list:(cur.items||[]).map(i=>i.t).join("\n"), shared: c==="sharednotes" } : {};
+  openForm({ title: cur ? "Edit note" : asList ? "New to-do list" : "New note", values: vals, fields:[
+      { k:"title", label:"Title", req:true, ph: asList ? "e.g. This weekend" : "e.g. Gift ideas" },
+      { k:"text", label:"Note", type:"textarea", rows: asList ? 2 : 4 },
+      { k:"list", label:"To-dos, one per line", type:"textarea", rows:5, ph:"Call the plumber\nBuy stamps", help:"Each line gets a box to tick." },
+      { k:"pinned", label:"", type:"toggle", text:"Pin to the top" },
+      { k:"shared", label:"", type:"toggle", text:"Share with the household (otherwise only you can see it)" }
+    ],
+    onSave: v => {
+      const old = cur?.items || [];
+      const items = v.list.split("\n").map(s=>s.trim()).filter(Boolean).map(t => ({ t, done: !!old.find(o=>o.t===t)?.done }));
+      const data = { title:v.title, text:v.text, items, pinned:v.pinned };
+      const target = v.shared ? "sharednotes" : "notes";
+      if (cur && target === c) Store.update(c, id, data);
+      else { if (cur) Store.remove(c, id); Store.add(target, data); }
+    },
+    onDelete: cur ? () => Store.remove(c, id) : null });
+}
 
 /* ---------- Budget ---------- */
 let budMonth = null;
@@ -768,6 +814,10 @@ const ACT = {
   "me-ex": () => openForm({ title:"Add exercise", fields:[{ k:"name", label:"Activity", type:"select", opts:ACTIVITIES.map(a=>[a[0],a[0]]) }, { k:"min", label:"Minutes", type:"number", req:true, def:30 }],
     onSave:v => { const met = (ACTIVITIES.find(a=>a[0]===v.name)||[0,4])[1]; const w = Number(myProfile().weight) || 70; updLog(l => { l.exercise.push({ ...v, kcal: met * w * (Number(v.min)||0) / 60 }); return l; }); } }),
   "me-rm": el => updLog(l => { l[el.dataset.k].splice(+el.dataset.i, 1); return l; }),
+  "note-add": el => editNote(null, null, !!el.dataset.list),
+  "note-edit": el => editNote(el.dataset.c, el.dataset.id),
+  "todo-tick": el => { const n = Store.get(el.dataset.c, el.dataset.id); const items = (n.items||[]).map((it,i) => i===+el.dataset.i ? { ...it, done:!it.done } : it); Store.update(el.dataset.c, n.id, { items }); },
+  "todo-clear": el => { const n = Store.get(el.dataset.c, el.dataset.id); Store.update(el.dataset.c, n.id, { items:(n.items||[]).filter(i=>!i.done) }); },
   "me-weight": () => openForm({ title:"Log weight", fields:[{ k:"weight", label:"Weight (kg)", type:"number", req:true, def:myProfile().weight }], onSave:v => { updLog(l => ({ ...l, weight:v.weight })); Store.put("profile", Store.pid("profile"), { ...myProfile(), weight:v.weight }); } }),
   "bud-m": el => { const [y,m] = budMonth.split("-").map(Number); const d = new Date(y, m-1+Number(el.dataset.d), 1); budMonth = `${d.getFullYear()}-${pad(d.getMonth()+1)}`; render(); },
   "bud-add": () => openForm({ title:"New category", fields:[{ k:"name", label:"Name", req:true }, { k:"limit", label:"Monthly limit", type:"number" }], onSave:v=>Store.add("budget", v) }),
@@ -794,6 +844,10 @@ document.addEventListener("click", ev => {
   ev.preventDefault(); ACT[a.dataset.act](a);
 });
 document.addEventListener("submit", ev => {
+  const tf = ev.target.dataset?.todoForm;
+  if (tf) { ev.preventDefault(); const [c, id] = tf.split("|"); const t = ev.target.t.value.trim(); if (!t) return;
+    const n = Store.get(c, id); Store.update(c, id, { items:[...(n.items||[]), { t, done:false }] });
+    setTimeout(()=>document.querySelector(`[data-todo-form="${CSS.escape(tf)}"] input`)?.focus(), 20); return; }
   if (ev.target.id !== "quickShop") return;
   ev.preventDefault(); const q = ev.target.q.value.trim(); if (!q) return;
   const p = parseIng(q); Store.add("shopping", { name:p.name, qty:p.qty, unit:p.qty!=null?p.unit:"", cat:guessCat(p.name), done:false });

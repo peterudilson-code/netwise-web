@@ -7,8 +7,8 @@
    - personal:  only the person who wrote it can ever read it (health, body stats, private events).
      The server enforces this with row-level security, not just the app. */
 
-const HH_COLS = ["settings","members","diets","recipes","plan","shopping","pantry","chores","events","budget","expenses"];
-const ME_COLS = ["profile","logs","myevents"];
+const HH_COLS = ["settings","members","diets","recipes","plan","shopping","pantry","chores","events","budget","expenses","sharednotes"];
+const ME_COLS = ["profile","logs","myevents","notes"];
 const ALL_COLS = [...HH_COLS, ...ME_COLS];
 const scopeOf = c => ME_COLS.includes(c) ? "personal" : "household";
 const rid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
